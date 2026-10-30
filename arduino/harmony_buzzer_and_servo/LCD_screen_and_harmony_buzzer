@@ -1,0 +1,155 @@
+#include <Servo.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+const int potPin = A0;
+const int activeBuzzerPin = 2;
+const int passiveBuzzerPin = 3;
+const int servoPin = 9;
+
+Servo myServo;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+const int baseFreq = 2620;
+int lastStep = -1;   // last step shown on the LCD
+
+// Print one 16-character line (padded, so no clear() flicker)
+void lcdLine(int row, const char *text) {
+  char buf[17];
+  snprintf(buf, sizeof(buf), "%-16s", text);
+  lcd.setCursor(0, row);
+  lcd.print(buf);
+}
+
+void showStatus(int stepNum, const char *name, int freq, int angle) {
+  if (stepNum == 0) {
+    lcdLine(0, "MUTED");
+    lcdLine(1, "Turn knob up");
+    return;
+  }
+  char line2[17];
+  snprintf(line2, sizeof(line2), "%5dHz Ang:%3d", freq, angle);
+  lcdLine(0, name);
+  lcdLine(1, line2);
+}
+
+void setup() {
+  pinMode(activeBuzzerPin, OUTPUT);
+  pinMode(passiveBuzzerPin, OUTPUT);
+  myServo.attach(servoPin);
+  Serial.begin(9600);
+
+  Wire.begin();
+  lcd.init();
+  lcd.backlight();
+  lcdLine(0, "Harmony Synth");
+  lcdLine(1, "Starting...");
+  delay(800);
+}
+
+void loop() {
+  int potValue = analogRead(potPin);
+
+  // Mute and return servo to 0 degrees when the knob is turned fully down
+  if (potValue < 10) {
+    digitalWrite(activeBuzzerPin, LOW);
+    noTone(passiveBuzzerPin);
+    myServo.write(0);
+    Serial.println("Status: Muted & Servo Step 0 (0°)");
+
+    if (lastStep != 0) {
+      showStatus(0, "Muted", 0, 0);
+      lastStep = 0;
+    }
+  }
+  else {
+    digitalWrite(activeBuzzerPin, HIGH);
+
+    int targetFreq = baseFreq;
+    int servoAngle = 0;
+    int stepNum = 1;
+    const char *harmonyName = "";
+
+    if (potValue < 70) {
+      targetFreq = baseFreq / 8;  servoAngle = 0;   stepNum = 1;
+      harmonyName = "Triple Sub-Oct";
+    }
+    else if (potValue < 140) {
+      targetFreq = baseFreq / 6;  servoAngle = 13;  stepNum = 2;
+      harmonyName = "Sub-Minor 6th";
+    }
+    else if (potValue < 210) {
+      targetFreq = baseFreq / 5;  servoAngle = 26;  stepNum = 3;
+      harmonyName = "Sub-Major 3rd";
+    }
+    else if (potValue < 280) {
+      targetFreq = baseFreq / 4;  servoAngle = 39;  stepNum = 4;
+      harmonyName = "Double Sub-Oct";
+    }
+    else if (potValue < 350) {
+      targetFreq = baseFreq / 3;  servoAngle = 51;  stepNum = 5;
+      harmonyName = "Sub-12th";
+    }
+    else if (potValue < 420) {
+      targetFreq = baseFreq / 2;  servoAngle = 64;  stepNum = 6;
+      harmonyName = "Sub-Octave";
+    }
+    else if (potValue < 490) {
+      targetFreq = baseFreq * 3 / 4;  servoAngle = 77;  stepNum = 7;
+      harmonyName = "Low 4th";
+    }
+    else if (potValue < 560) {
+      targetFreq = baseFreq;  servoAngle = 90;  stepNum = 8;
+      harmonyName = "Unison";
+    }
+    else if (potValue < 630) {
+      targetFreq = baseFreq * 5 / 4;  servoAngle = 103; stepNum = 9;
+      harmonyName = "Major 3rd";
+    }
+    else if (potValue < 700) {
+      targetFreq = baseFreq * 4 / 3;  servoAngle = 116; stepNum = 10;
+      harmonyName = "Perfect 4th";
+    }
+    else if (potValue < 770) {
+      targetFreq = baseFreq * 3 / 2;  servoAngle = 129; stepNum = 11;
+      harmonyName = "Perfect 5th";
+    }
+    else if (potValue < 840) {
+      targetFreq = baseFreq * 5 / 3;  servoAngle = 141; stepNum = 12;
+      harmonyName = "Major 6th";
+    }
+    else if (potValue < 910) {
+      targetFreq = baseFreq * 2;  servoAngle = 154; stepNum = 13;
+      harmonyName = "High Octave";
+    }
+    else if (potValue < 970) {
+      targetFreq = baseFreq * 3;  servoAngle = 167; stepNum = 14;
+      harmonyName = "12th (V.High)";
+    }
+    else {
+      targetFreq = baseFreq * 4;  servoAngle = 180; stepNum = 15;
+      harmonyName = "Double Octave";
+    }
+
+    // Drive servo and speaker together
+    myServo.write(servoAngle);
+    tone(passiveBuzzerPin, targetFreq);
+
+    // Update the LCD only when the step changes (no flicker, loop stays fast)
+    if (stepNum != lastStep) {
+      showStatus(stepNum, harmonyName, targetFreq, servoAngle);
+      lastStep = stepNum;
+    }
+
+    // Serial Monitor output
+    Serial.print("Pot: ");
+    Serial.print(potValue);
+    Serial.print(" \t| Servo Step Angle: ");
+    Serial.print(servoAngle);
+    Serial.print("° \t| Harmony: ");
+    Serial.print(harmonyName);
+    Serial.println();
+  }
+
+  delay(40);
+}
